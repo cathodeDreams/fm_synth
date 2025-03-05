@@ -2,11 +2,13 @@
 City Pop Generator
 
 A procedural music generator that creates city pop / jazz fusion tracks
-using the music_theory and fm_synth modules.
+using the music_theory and fm_synth modules. Extends the core music generator
+framework with city pop specific elements.
 """
 import random
 import numpy as np
 from typing import List, Tuple, Dict, Optional, Union
+import os
 
 from music_theory import (
     Note, Scale, Chord, ChordType, ScaleType, 
@@ -18,31 +20,167 @@ from fm_synth import (
     WaveformType, ADSREnvelope, OperatorRoutingType,
     EffectChain, DelayEffect, ReverbEffect, ChorusEffect
 )
+from core_music_generator import CoreMusicGenerator, MarkovMelodyGenerator
 
-class CityPopGenerator:
+
+class CityPopMarkovMelodyGenerator(MarkovMelodyGenerator):
+    """City pop specific Markov melody generator with pentatonic patterns and signature leaps."""
+    
+    def __init__(self):
+        """Initialize the city pop Markov melody generator."""
+        super().__init__()
+        
+        # Add city pop specific pentatonic leaps and motifs
+        self.pentatonic_leaps = CityPopGenerator.PENTATONIC_LEAPS
+        self.motifs = CityPopGenerator.MOTIFS
+        self.pentatonic_motifs = CityPopGenerator.PENTATONIC_MOTIFS
+    
+    def generate_phrase(
+        self, 
+        scale, 
+        chord,
+        start_degree=None, 
+        length=8, 
+        rhythm_pattern=None,
+        use_motif=False,
+        end_on_chord_tone=True,
+        octave=0
+    ):
+        """
+        Generate a melodic phrase using enhanced Markov transitions with city pop flavor.
+        
+        Args:
+            scale: The scale to use
+            chord: The current chord (for chord-tone alignment)
+            start_degree: Starting scale degree (1-7)
+            length: Number of notes in the phrase
+            rhythm_pattern: List of rhythmic positions (0=weak beat, 1=strong beat)
+            use_motif: Whether to use a predefined motif
+            end_on_chord_tone: Whether to end the phrase on a chord tone
+            octave: Octave adjustment (0 = no adjustment, 1 = up an octave)
+            
+        Returns:
+            List of notes in the phrase
+        """
+        if rhythm_pattern is None:
+            # Default rhythm pattern alternating strong/weak beats
+            rhythm_pattern = [1 if i % 2 == 0 else 0 for i in range(length)]
+            
+        # Get chord tones as scale degrees
+        chord_degrees = self.get_chord_degrees(chord, scale)
+        
+        # If no chord tones found, default to 1, 3, 5
+        if not chord_degrees:
+            if "minor" in chord.chord_type:
+                chord_degrees = [1, 3, 5]  # Treat as minor triad
+            else:
+                chord_degrees = [1, 3, 5]  # Treat as major triad
+        
+        # If start_degree is None, choose a good starting note from chord tones
+        if start_degree is None:
+            start_degree = random.choice(chord_degrees)
+        
+        # Determine if we should use a motif
+        if use_motif and length >= 5:
+            # Higher chance to use pentatonic motifs for city pop
+            if random.random() < 0.6:  # 60% chance for pentatonic patterns
+                motif = random.choice(self.pentatonic_motifs)
+            else:
+                motif = random.choice(self.motifs)
+            
+            # Adjust the length
+            if len(motif) > length:
+                # Truncate the motif
+                degrees = motif[:length]
+            else:
+                # Extend the motif using Markov chain
+                degrees = motif.copy()
+                current = degrees[-1]
+                
+                while len(degrees) < length:
+                    # Determine if this is a strong or weak beat
+                    is_strong_beat = rhythm_pattern[len(degrees)] == 1
+                    
+                    # Use appropriate transitions
+                    transitions = self.strong_beat_transitions if is_strong_beat else self.weak_beat_transitions
+                    
+                    # Occasionally use leaps for city pop flavor (more on weak beats)
+                    use_leap = random.random() < (0.2 if is_strong_beat else 0.4)
+                    
+                    if use_leap and current in self.pentatonic_leaps:
+                        next_candidates = list(self.pentatonic_leaps[current].keys())
+                        next_weights = list(self.pentatonic_leaps[current].values())
+                    else:
+                        # Use regular transitions
+                        next_candidates = list(transitions[current].keys())
+                        next_weights = list(transitions[current].values())
+                        
+                        # On strong beats, bias toward chord tones for better harmony
+                        if is_strong_beat:
+                            for i, degree in enumerate(next_candidates):
+                                if degree in chord_degrees:
+                                    next_weights[i] *= 1.5  # Increase weight for chord tones
+                    
+                    # Normalize weights
+                    total_weight = sum(next_weights)
+                    next_weights = [w/total_weight for w in next_weights]
+                    
+                    next_degree = random.choices(
+                        next_candidates,
+                        weights=next_weights,
+                        k=1
+                    )[0]
+                    
+                    degrees.append(next_degree)
+                    current = next_degree
+        else:
+            # Use the parent class implementation for regular Markov generation
+            return super().generate_phrase(
+                scale, chord, start_degree, length, rhythm_pattern, 
+                use_motif, end_on_chord_tone, octave
+            )
+        
+        # Convert degrees to actual notes, with octave adjustment
+        notes = []
+        for degree in degrees:
+            note = scale.get_degree(degree)
+            if octave > 0:
+                note = note.transpose(12 * octave)
+            notes.append(note)
+                
+        return notes
+
+class CityPopGenerator(CoreMusicGenerator):
     """Generator for procedural city pop / jazz fusion tracks."""
     
-    # Common city pop chord progressions as scale degrees
-    CHORD_PROGRESSIONS = [
-        # Common major key progressions with jazz flavor
-        [1, 6, 2, 5],     # I-vi-ii-V
-        [1, 4, 2, 5],     # I-IV-ii-V  
-        [2, 5, 1, 6],     # ii-V-I-vi
-        [1, 4, 3, 6],     # I-IV-iii-vi
-        [4, 5, 3, 6],     # IV-V-iii-vi
-        [1, 6, 4, 5],     # I-vi-IV-V
-        [6, 2, 5, 1]      # vi-ii-V-I
+    # City pop specific melodic patterns and motifs
+    MOTIFS = [
+        [1, 3, 5, 4, 3, 2, 1],           # Descending motif
+        [5, 6, 1, 2, 3],                 # Ascending motif
+        [1, 5, 1, 3, 1],                 # Arpeggiated motif
+        [5, 3, 2, 3, 5, 6, 5],           # Neighbor tone motif
+        [1, 3, 5, 3, 5, 6, 5, 3, 1],     # Wave-like motif
+        [5, 6, 5, 3, 2, 3, 1],           # City pop signature lick
+        [1, 2, 3, 5, 6, 5, 3],           # Pentatonic-like phrase
+        [3, 2, 1, 2, 3, 5, 3],           # Turn figure
     ]
     
-    # Common chord extensions for city pop
-    CHORD_EXTENSIONS = {
-        1: [ChordType.MAJOR7, ChordType.MAJOR6, ChordType.ADD9],       # I chord
-        2: [ChordType.MINOR7, ChordType.MINOR6],                       # ii chord
-        3: [ChordType.MINOR7],                                         # iii chord
-        4: [ChordType.MAJOR7, ChordType.ADD9],                         # IV chord
-        5: [ChordType.DOMINANT7, ChordType.MAJOR],                     # V chord
-        6: [ChordType.MINOR7, ChordType.MINOR],                        # vi chord
-        7: [ChordType.HALF_DIMINISHED7]                               # vii chord
+    # City pop-specific pentatonic patterns
+    PENTATONIC_MOTIFS = [
+        [1, 2, 3, 5, 6],                 # Major pentatonic ascending
+        [6, 5, 3, 2, 1],                 # Major pentatonic descending
+        [1, 3, 5, 6, 5, 3],              # Pentatonic pattern 1
+        [5, 6, 1, 3, 1, 6],              # Pentatonic pattern 2
+        [3, 1, 6, 5, 3, 5]               # Pentatonic pattern 3
+    ]
+    
+    # Transitions for pentatonic-centric leaps found in city pop
+    PENTATONIC_LEAPS = {
+        1: {3: 0.4, 5: 0.6},  # Leaps to 3rd and 5th from root
+        2: {5: 0.7, 7: 0.3},  # Leaps from 2nd
+        3: {5: 0.5, 1: 0.5},  # Leaps to 5th and root from 3rd
+        5: {1: 0.4, 3: 0.3, 6: 0.3},  # Leaps from 5th
+        6: {1: 0.6, 3: 0.4}   # Leaps from 6th  
     }
     
     # Custom FM synth instruments for city pop
@@ -330,8 +468,8 @@ class CityPopGenerator:
     
     def __init__(self, sample_rate: int = 44100):
         """Initialize the city pop generator."""
-        self.sample_rate = sample_rate
-        self.sequencer = Sequencer(sample_rate)
+        # Initialize parent class
+        super().__init__(sample_rate)
         
         # Create instruments
         self.ep_piano = self.create_ep_piano()
@@ -348,16 +486,164 @@ class CityPopGenerator:
         self.open_hihat = self._create_open_hihat()
         self.ride = self._create_ride_cymbal()
         
-        # Track indices for effects
-        self.track_indices = {
-            'ep_piano': None,
-            'synth_bass': None,
-            'lead_synth': None,
-            'bell': None,
-            'saxophone': None,
-            'strings': None,
-            'drums': None
-        }
+        # Initialize the city pop specific MarkovMelodyGenerator
+        self.markov_generator = CityPopMarkovMelodyGenerator()
+        
+    def add_tasteful_extensions(self, chord, context='default'):
+        """
+        Add tasteful city pop style extensions to a chord based on context.
+        
+        Args:
+            chord: The original chord
+            context: The musical context ('verse', 'chorus', 'bridge', etc.)
+            
+        Returns:
+            A new chord with extensions added
+        """
+        # City pop often uses 9ths, 11ths, 13ths but in a controlled way
+        chord_type = chord.chord_type
+        root = chord.root
+        
+        # Create a new list of notes based on the original chord
+        notes = chord.notes.copy()
+        
+        # Common city pop extensions by chord type
+        # Different extensions sound better on different chord types
+        
+        # For major7 chords, typically use add9, maj13, or maj9
+        if chord_type == ChordType.MAJOR7.value:
+            if context == 'chorus' or context == 'bridge':
+                # More colorful extensions in chorus/bridge
+                extension_options = [
+                    'add9',      # Just add 9th
+                    'maj9',      # 9th with existing maj7
+                    'maj13',     # 13th with existing maj7
+                    'maj9_13'    # Both 9th and 13th for rich sound
+                ]
+            else:
+                # Simpler extensions in verse/intro
+                extension_options = [
+                    'add9',      # Just add 9th
+                    'maj9',      # 9th with existing maj7
+                    'none'       # No extensions
+                ]
+            
+            extension = random.choices(
+                extension_options,
+                weights=[0.3, 0.4, 0.2, 0.1] if context in ['chorus', 'bridge'] else [0.4, 0.3, 0.3],
+                k=1
+            )[0]
+            
+            if extension == 'add9':
+                ninth = root.transpose(14)  # 9th = root + 14 semitones
+                notes.append(ninth)
+            elif extension == 'maj9':
+                ninth = root.transpose(14)  # 9th
+                notes.append(ninth)
+            elif extension == 'maj13':
+                thirteenth = root.transpose(21)  # 13th = root + 21 semitones
+                notes.append(thirteenth)
+            elif extension == 'maj9_13':
+                ninth = root.transpose(14)  # 9th
+                thirteenth = root.transpose(21)  # 13th
+                notes.extend([ninth, thirteenth])
+                
+        # For dominant7 chords, add 9ths, 13ths, or altered dominants
+        elif chord_type == ChordType.DOMINANT7.value:
+            if context == 'bridge':
+                # More altered extensions in bridge sections
+                extension_options = [
+                    '9',          # Dominant 9
+                    '13',         # Dominant 13
+                    'b9',         # Altered dominant with flat 9
+                    '9_13',       # 9 and 13 together
+                    'alt'         # Altered dominant (b9 or #9)
+                ]
+                weights = [0.2, 0.3, 0.15, 0.25, 0.1]
+            else:
+                # More standard extensions elsewhere
+                extension_options = [
+                    '9',          # Dominant 9
+                    '13',         # Dominant 13
+                    'none',       # No extension
+                    '9_13'        # 9 and 13 together
+                ]
+                weights = [0.4, 0.3, 0.2, 0.1]
+            
+            extension = random.choices(extension_options, weights=weights, k=1)[0]
+            
+            if extension == '9':
+                ninth = root.transpose(14)  # 9th
+                notes.append(ninth)
+            elif extension == '13':
+                thirteenth = root.transpose(21)  # 13th
+                notes.append(thirteenth)
+            elif extension == 'b9':
+                flat_ninth = root.transpose(13)  # b9
+                notes.append(flat_ninth)
+            elif extension == '9_13':
+                ninth = root.transpose(14)  # 9th
+                thirteenth = root.transpose(21)  # 13th
+                notes.extend([ninth, thirteenth])
+            elif extension == 'alt':
+                # Randomly choose between b9 and #9
+                if random.random() < 0.5:
+                    alt_ninth = root.transpose(13)  # b9
+                else:
+                    alt_ninth = root.transpose(15)  # #9
+                notes.append(alt_ninth)
+        
+        # For minor7 chords, add 9ths or 11ths
+        elif chord_type == ChordType.MINOR7.value:
+            if context in ['chorus', 'bridge']:
+                extension_options = [
+                    'add9',      # Minor 9
+                    'add11',     # Minor 11
+                    'add9_11',   # Minor 9/11
+                    'none'       # No extension
+                ]
+                weights = [0.35, 0.35, 0.15, 0.15]
+            else:
+                extension_options = [
+                    'add9',      # Minor 9
+                    'none',      # No extension
+                    'add11'      # Minor 11
+                ]
+                weights = [0.4, 0.4, 0.2]
+            
+            extension = random.choices(extension_options, weights=weights, k=1)[0]
+            
+            if extension == 'add9':
+                ninth = root.transpose(14)  # 9th
+                notes.append(ninth)
+            elif extension == 'add11':
+                eleventh = root.transpose(17)  # 11th = root + 17 semitones
+                notes.append(eleventh)
+            elif extension == 'add9_11':
+                ninth = root.transpose(14)  # 9th
+                eleventh = root.transpose(17)  # 11th
+                notes.extend([ninth, eleventh])
+        
+        # For minor6 or major6 chords
+        elif chord_type in [ChordType.MINOR6.value, ChordType.MAJOR6.value]:
+            # 6/9 chord is common in city pop
+            if random.random() < 0.7:  # 70% chance
+                ninth = root.transpose(14)  # 9th
+                notes.append(ninth)
+        
+        # For add9 chords, sometimes add 11ths in chorus/bridge
+        elif chord_type == ChordType.ADD9.value:
+            if context in ['chorus', 'bridge'] and random.random() < 0.3:
+                eleventh = root.transpose(17)  # 11th
+                notes.append(eleventh)
+        
+        # Create a new chord object with the same properties as the original
+        custom_chord = Chord(root, chord_type)
+        
+        # Store the extended notes for reference
+        custom_chord.extended_notes = notes
+        
+        return custom_chord
         
     def generate_track(
         self, 
@@ -366,7 +652,7 @@ class CityPopGenerator:
         tempo: int = 90
     ) -> Sequencer:
         """
-        Generate a complete city pop / jazz fusion track.
+        Generate a complete city pop / jazz fusion track with enhanced musical quality.
         
         Args:
             root_note: Root note of the track
@@ -405,12 +691,14 @@ class CityPopGenerator:
         # Choose a chord progression
         progression_degrees = random.choice(self.CHORD_PROGRESSIONS)
         
-        # Apply chord extensions
+        # Apply enhanced chord extensions
         chords = []
         for degree in progression_degrees:
             # Choose a random chord extension from the available options for this degree
             chord_type = random.choice(self.CHORD_EXTENSIONS[degree])
             chord = Chord.from_scale_degree(scale, degree, chord_type)
+            # Use advanced tasteful extensions
+            chord = self.add_tasteful_extensions(chord, context='default')
             chords.append(chord)
         
         # Print chord progression
@@ -424,7 +712,7 @@ class CityPopGenerator:
         # Generate form (song structure)
         form = self._generate_song_form(chords)
         
-        # Generate and add each track
+        # Generate and add each track with improved algorithms
         self.track_indices['ep_piano'] = 0  # Track index for piano (first track)
         self._generate_ep_piano_comp(chords, tempo, seconds_per_beat, form)
         
@@ -1263,7 +1551,7 @@ class CityPopGenerator:
         form: Dict[str, List[int]] = None
     ) -> None:
         """
-        Generate a melody that fits the chord progression.
+        Generate a melody that fits the chord progression with improved harmony.
         
         Args:
             scale: The scale to use for melody generation
@@ -1272,13 +1560,10 @@ class CityPopGenerator:
             seconds_per_beat: Duration of one beat in seconds
             form: Song form structure
         """
-        print("Generating melody...")
+        print("Generating melody with improved chord-tone alignment...")
         
         # We'll create a melody that works with the given chords
         bar_duration = 4 * seconds_per_beat
-        
-        # Create Markov melody generator
-        markov_generator = self.MarkovMelodyGenerator()
         
         # Calculate total bars if form is provided
         if form:
@@ -1287,8 +1572,7 @@ class CityPopGenerator:
             # Default to length of chord progression if no form provided
             total_bars = len(chords)
             
-        # For each section in the form, create a distinct melody
-        # Store melodies for each section type to reuse
+        # Store melodies for each section type to reuse with variations
         section_melodies = {}
         
         # For each section in the form
@@ -1325,10 +1609,10 @@ class CityPopGenerator:
                     )
                 else:
                     # Generate a new melody for this section type
-                    section_melody = self._generate_section_melody(
+                    section_melody = self._generate_improved_section_melody(
                         scale,
                         chords,
-                        markov_generator,
+                        self.markov_generator,
                         section_type,
                         len(bar_indices),
                         seconds_per_beat,
@@ -1351,10 +1635,10 @@ class CityPopGenerator:
             # No form provided, just generate a simple melody
             # Treat the whole thing as a verse section
             bar_indices = list(range(total_bars))
-            section_melody = self._generate_section_melody(
+            section_melody = self._generate_improved_section_melody(
                 scale,
                 chords,
-                markov_generator,
+                self.markov_generator,
                 'verse',
                 total_bars,
                 seconds_per_beat,
@@ -1371,23 +1655,23 @@ class CityPopGenerator:
                 bar_duration
             )
     
-    def _generate_section_melody(
+    def _generate_improved_section_melody(
         self,
-        scale: Scale,
-        chords: List[Chord],
-        markov_generator: MarkovMelodyGenerator,
-        section_type: str,
-        num_bars: int,
-        seconds_per_beat: float,
-        bar_duration: float
-    ) -> List[Tuple[Note, float, float, float]]:
+        scale,
+        chords,
+        markov_generator,
+        section_type,
+        num_bars,
+        seconds_per_beat,
+        bar_duration
+    ):
         """
-        Generate a melody for a specific section type.
+        Generate a melody for a specific section type with improved chord-tone alignment.
         
         Args:
             scale: The scale to use
             chords: List of chords
-            markov_generator: Markov chain generator
+            markov_generator: Enhanced Markov chain generator
             section_type: Type of section ('verse', 'chorus', 'bridge')
             num_bars: Number of bars in the section
             seconds_per_beat: Duration of one beat in seconds
@@ -1401,19 +1685,19 @@ class CityPopGenerator:
             # Verses are more sparse and laid-back
             num_phrases = random.randint(2, 3)
             phrase_density = 0.6  # Percentage of time filled with notes vs. rests
-            use_motifs = False  # Less structured
+            use_motifs = random.random() < 0.5  # 50% chance in verses
             octave = 0  # Standard register
         elif section_type == 'chorus':
             # Choruses are more dense and memorable
             num_phrases = random.randint(2, 4)
             phrase_density = 0.8  # More notes, fewer rests
-            use_motifs = True  # More structured with recognizable motifs
+            use_motifs = random.random() < 0.8  # 80% chance in chorus
             octave = 1  # Higher register
         else:  # bridge
             # Bridges provide contrast
             num_phrases = random.randint(1, 2)
             phrase_density = 0.7
-            use_motifs = random.choice([True, False])
+            use_motifs = random.random() < 0.7  # 70% chance
             octave = random.choice([0, 1])  # Either register
         
         # Calculate how long each phrase should be
@@ -1454,26 +1738,35 @@ class CityPopGenerator:
                 rhythm.append(duration)
                 remaining_time -= duration
             
-            # Choose starting note based on the current chord
-            chord_idx = int(phrase_start / bar_duration) % len(chords)
+            # Calculate the bars covered by this phrase
+            phrase_start_bar = int(phrase_start / bar_duration)
+            phrase_end_bar = int((phrase_start + phrase_length) / bar_duration)
+            if phrase_end_bar >= len(chords):
+                phrase_end_bar = len(chords) - 1
+            
+            # Create rhythm pattern for Markov generation
+            # Alternate strong/weak beats for basic rhythm
+            strong_weak_pattern = []
+            for i in range(len(rhythm)):
+                # Create a simple strong/weak pattern
+                if i % 2 == 0:  # Even positions are strong beats
+                    strong_weak_pattern.append(1)  # Strong beat
+                else:
+                    strong_weak_pattern.append(0)  # Weak beat
+            
+            # Identify which chord to use for this phrase
+            chord_idx = phrase_start_bar % len(chords)
             chord = chords[chord_idx]
             
-            # Use either 1, 3, or 5 scale degree as starting point
-            if chord.chord_type == ChordType.MAJOR.value or chord.chord_type == ChordType.MAJOR7.value:
-                start_degree_options = [1, 3, 5]
-            elif chord.chord_type == ChordType.MINOR.value or chord.chord_type == ChordType.MINOR7.value:
-                start_degree_options = [1, 3, 5]  # 3 is b3 in minor context
-            else:
-                start_degree_options = [1, 5]
-            
-            start_degree = random.choice(start_degree_options)
-            
-            # Generate the phrase using Markov chain
+            # Generate melody notes that align with the chord using enhanced generator
             markov_notes = markov_generator.generate_phrase(
                 scale, 
-                start_degree, 
+                chord,
+                None,  # Let generator choose best starting degree 
                 len(rhythm),
+                rhythm_pattern=strong_weak_pattern,
                 use_motif=use_motifs,
+                end_on_chord_tone=True,
                 octave=octave
             )
             
@@ -1482,7 +1775,7 @@ class CityPopGenerator:
             
             for note_idx, (note, duration) in enumerate(zip(markov_notes, rhythm)):
                 # Determine if this should be a rest
-                is_rest = random.random() < 0.2  # 20% chance for rest
+                is_rest = random.random() < 0.15  # 15% chance for rest
                 
                 if not is_rest:
                     # Note duration slightly shorter than the rhythm duration for phrasing
@@ -1499,7 +1792,7 @@ class CityPopGenerator:
                     section_melody.append((note, current_time, note_duration, velocity))
                 
                 current_time += duration
-                
+                    
         return section_melody
     
     def _apply_section_melody(
@@ -2318,8 +2611,6 @@ def generate_and_play_track(
     Returns:
         The absolute path to the saved WAV file
     """
-    import os
-    
     # Create output directory if it doesn't exist
     os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
     

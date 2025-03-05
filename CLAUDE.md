@@ -3,21 +3,29 @@
 ## Commands
 
 ### Run Commands
-- Main project: `python main.py`
-- Just FM synth example: `python fm_synth.py`
-- Test single feature: `python -c "from citypop_generator import generate_and_play_track; generate_and_play_track()"`
+- Main project: `python main.py` (supports style, key, octave, tempo options)
+- FM synth examples: `python fm_synth.py`
+- Generate city pop: `python -c "from citypop_generator import generate_and_play_track; generate_and_play_track(root_note='F', octave=4, tempo=88)"`
+
+### Installation
+- Install dependencies: `pip install numpy sounddevice soundfile psutil`
+
+### Development
+- Run tests: (None implemented yet - consider adding pytest)
+- Linting: `python -m pylint *.py` (if pylint is installed)
 
 ## Code Style Guidelines
-
-- **Imports**: Standard library first, then third-party, then local modules
-- **Formatting**: Use descriptive variable names, follow PEP 8 conventions
-- **Types**: Use type hints for function parameters and return values
+- **Imports**: Standard library → third-party packages → local modules
+- **Formatting**: PEP 8 with descriptive variable names
+- **Types**: Use type hints (List, Dict, Optional, Union, etc.)
 - **Naming**: snake_case for functions/variables, CamelCase for classes
-- **Error Handling**: Use try/except blocks for expected exceptions
-- **Documentation**: Docstrings in Google style format for all functions/classes
+- **Error Handling**: Try/except blocks for expected exceptions
+- **Documentation**: Google style docstrings for all functions/classes
 - **Comments**: Explain complex algorithms but prefer self-explanatory code
 
-The project consists of three main modules:
-1. `fm_synth.py` - The core FM synthesis engine
-2. `music_theory.py` - Music theory algorithms and data structures
-3. `citypop_generator.py` - City pop style music generator using the other modules
+## Project Structure
+- `fm_synth.py` - Core FM synthesis engine with operators and effects
+- `music_theory.py` - Music theory algorithms (notes, scales, chords)
+- `citypop_generator.py` - City pop style music generator
+- `main.py` - Entry point with command-line interface
+- `output/` - Directory for generated audio files

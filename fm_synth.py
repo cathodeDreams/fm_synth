@@ -1163,13 +1163,17 @@ class Sequencer:
         # Find or create a track that's long enough
         track_idx = None
         for i, track_duration in enumerate(self.track_durations):
-            if track_duration >= note_end_time:
+            # Check both track duration and physical array length
+            required_samples = int(note_end_time * self.sample_rate)
+            if track_duration >= note_end_time and len(self.tracks[i]) >= required_samples:
                 track_idx = i
                 break
         
         if track_idx is None:
             # Create a new track
             track_length = int(note_end_time * self.sample_rate)
+            # Ensure the track is at least as large as the note waveform
+            track_length = max(track_length, len(note_waveform))
             self.tracks.append(np.zeros(track_length))
             self.track_durations.append(note_end_time)
             self.track_effects.append(None)  # No effects by default
@@ -1189,8 +1193,11 @@ class Sequencer:
             )
             self.track_durations[track_idx] = end_sample / self.sample_rate
         
+        # Safety check for slice length
+        actual_samples = min(len(note_waveform), end_sample - start_sample)
+        
         # Mix the note into the track
-        self.tracks[track_idx][start_sample:end_sample] += note_waveform
+        self.tracks[track_idx][start_sample:start_sample + actual_samples] += note_waveform[:actual_samples]
     
     def apply_effects_to_track(self, track_idx: int, effect_chain: EffectChain) -> None:
         """
